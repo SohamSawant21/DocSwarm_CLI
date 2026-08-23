@@ -25,4 +25,4 @@ htmlcov/
 
 # Generated output
 output/
-reports/
+.docswarm/
