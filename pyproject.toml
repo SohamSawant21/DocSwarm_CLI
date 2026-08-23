@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "docswarm-cli"
 version = "0.1.0"
 description = "DocSwarm CLI for analyzing codebase architecture"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0.0",
     "networkx>=3.0",
