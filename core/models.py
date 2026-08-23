@@ -12,6 +12,7 @@ class FileNode(BaseModel):
     id: str  # Unique identifier, usually the relative path
     path: str
     name: str
+    language: Optional[str] = None
     role: str = "Other"
     size: int = 0
     imports: List[str] = Field(default_factory=list)
