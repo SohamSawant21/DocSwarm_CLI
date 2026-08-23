@@ -42,3 +42,8 @@ class GraphModel(BaseModel):
                     "type": dep.type
                 })
         return edges
+
+class AnalysisResult(BaseModel):
+    """Result of the complete analysis pipeline."""
+    graph: GraphModel
+    report: str
