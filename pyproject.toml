@@ -11,12 +11,18 @@ dependencies = [
     "pydantic>=2.0.0",
     "networkx>=3.0",
     "pydot>=2.0.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
 ]
+
+[project.scripts]
+docswarm = "cli.main:app"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
 ]
 
-[tool.setuptools]
-packages = ["cli", "core", "graph", "models", "analyzers", "detectors"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cli*", "core*", "graph*", "scanner*", "parsers*", "resolver*", "architecture*", "reports*"]
