@@ -7,7 +7,7 @@ from core.models import FileNode
 IGNORED_DIRECTORIES: Set[str] = {
     ".git", ".venv", "node_modules", "__pycache__", "dist", "build", 
     ".pytest_cache", ".idea", ".vscode", "vendor", "target", "out", 
-    "coverage", "env", "venv"
+    "coverage", "env", "venv", ".docswarm"
 }
 
 # Centralized extension-to-language mapping
