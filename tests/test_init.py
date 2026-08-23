@@ -31,9 +31,9 @@ def test_project_initialization():
 def test_graph_builder():
     """Verify that the NetworkX graph builder adapter works."""
     builder = GraphBuilder()
-    builder.nx_graph.add_node("src/main.py")
-    builder.nx_graph.add_node("src/utils.py")
-    builder._add_edge("src/main.py", "src/utils.py")
+    f1 = FileNode(id="src/main.py", path="src/main.py", name="main.py", dependencies=[Dependency(target_id="src/utils.py", type="import")])
+    f2 = FileNode(id="src/utils.py", path="src/utils.py", name="utils.py")
+    builder.build([f1, f2])
     
     assert builder.nx_graph.has_edge("src/main.py", "src/utils.py")
 
