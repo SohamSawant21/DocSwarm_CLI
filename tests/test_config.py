@@ -9,7 +9,8 @@ def test_default_config_preserves_v010():
     
     assert config.schema_version == "1.0"
     assert config.scanner.max_file_size_kb == 2048
-    assert len(config.scanner.custom_excludes) == 0
+    assert len(config.scanner.custom_excludes) == 14
+    assert "node_modules" in config.scanner.custom_excludes
     
     assert len(config.roles) == 7
     assert config.roles[0].role_name == "Controller"
@@ -51,7 +52,7 @@ def test_load_valid_yaml_partial_scanner_max_size(tmp_path):
     config = load_config(tmp_path)
     
     assert config.scanner.max_file_size_kb == 4096
-    assert config.scanner.custom_excludes == []
+    assert len(config.scanner.custom_excludes) == 14
 
 def test_load_valid_yaml_partial_scanner_excludes(tmp_path):
     # Case B: scanner custom excludes

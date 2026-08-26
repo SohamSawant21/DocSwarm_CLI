@@ -20,7 +20,7 @@ class AnalysisService:
     """
     def __init__(self, config: DocSwarmConfig | None = None):
         self.config = config or DocSwarmConfig()
-        self.scanner = WorkspaceScanner()
+        self.scanner = WorkspaceScanner(self.config.scanner)
         self.registry = ParserRegistry()
         
         # Explicit parser registration (Phase 1 requirement)

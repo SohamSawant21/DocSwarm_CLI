@@ -6,10 +6,18 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 class ConfigValidationError(Exception):
     pass
 
+def _default_custom_excludes() -> List[str]:
+    # Legacy v0.1.0 ignored directories (excluding .git and .docswarm which are mandatory)
+    return [
+        ".venv", "node_modules", "__pycache__", "dist", "build", 
+        ".pytest_cache", ".idea", ".vscode", "vendor", "target", "out", 
+        "coverage", "env", "venv"
+    ]
+
 class ScannerConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     max_file_size_kb: int = 2048
-    custom_excludes: List[str] = Field(default_factory=list)
+    custom_excludes: List[str] = Field(default_factory=_default_custom_excludes)
 
 class RoleConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
