@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$Version = "v0.1.0"
+$Version = "v0.2.0"
 $InstallDir = Join-Path $env:LOCALAPPDATA "DocSwarm"
 $ExePath = Join-Path $InstallDir "docswarm.exe"
 

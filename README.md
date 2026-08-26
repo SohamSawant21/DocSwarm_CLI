@@ -45,7 +45,7 @@ This installer:
 * **Note**: You will need to open a new PowerShell window afterward to use the `docswarm` command.
 
 ### Option 2: Direct Executable
-Alternatively, you can download `docswarm.exe` directly from the [GitHub Release v0.1.0](https://github.com/SohamSawant21/DocSwarm_CLI/releases/tag/v0.1.0) and place or use it independently. 
+Alternatively, you can download `docswarm.exe` directly from the [GitHub Release v0.2.0](https://github.com/SohamSawant21/DocSwarm_CLI/releases/tag/v0.2.0) and place or use it independently.
 * No Python installation or virtual environment is required.
 
 ## System Requirements
@@ -57,7 +57,7 @@ Alternatively, you can download `docswarm.exe` directly from the [GitHub Release
 * No Tree-sitter installation required (parsers are bundled)
 
 **External Requirement:**
-* **Graphviz** (`dot.exe`) must be installed and available on your system `PATH` if you wish to generate SVG visual graphs. 
+* **Graphviz** (`dot.exe`) must be installed and available on your system `PATH` if you wish to generate SVG visual graphs.
 * *Note: Graphviz is an external tool and is not bundled with DocSwarm.*
 
 ## Quick Start
@@ -208,7 +208,7 @@ If you prefer to run or build DocSwarm from the source code:
 
 ## Release Information
 
-The Windows executable is distributed in the [v0.1.0 GitHub Release](https://github.com/SohamSawant21/DocSwarm_CLI/releases/tag/v0.1.0). The release contains the `docswarm.exe` Windows executable.
+The Windows executable is distributed in the [GitHub Release v0.2.0](https://github.com/SohamSawant21/DocSwarm_CLI/releases/tag/v0.2.0). The release contains the `docswarm.exe` Windows executable.
 
 ## Limitations
 
