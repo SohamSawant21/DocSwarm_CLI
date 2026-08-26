@@ -77,6 +77,7 @@ class AnalysisService:
         analysis = analyzer.analyze()
         
         return AnalysisResult(
+            analysis_state=analysis.analysis_state,
             graph=domain_model,
             analysis=analysis,
             parsing_report=parsing_report

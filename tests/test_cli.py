@@ -70,6 +70,34 @@ def test_report(tmp_path):
     assert result.exit_code == 0
     assert "Report generated" in result.stdout
 
+def test_downstream_missing_artifact(tmp_path):
+    result = runner.invoke(app, ["deps", "a.py", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Analysis artifacts not found. Run 'docswarm analyze' first." in result.stdout
+
+def test_downstream_invalid_json(tmp_path):
+    art_dir = tmp_path / ".docswarm"
+    art_dir.mkdir()
+    (art_dir / "graph.json").write_text("{bad json")
+    
+    result = runner.invoke(app, ["deps", "a.py", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "graph.json is corrupted or malformed." in result.stdout
+
+def test_schema_version_mismatch(tmp_path):
+    art_dir = tmp_path / ".docswarm"
+    art_dir.mkdir()
+    (art_dir / "graph.json").write_text(json.dumps({"graph": {}})) # missing version -> 1.0 assumed
+    
+    result = runner.invoke(app, ["deps", "a.py", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Artifact schema version 1.0 is not supported" in result.stdout
+    
+    (art_dir / "graph.json").write_text(json.dumps({"artifact_schema_version": "9.9"}))
+    result2 = runner.invoke(app, ["deps", "a.py", str(tmp_path)])
+    assert result2.exit_code == 1
+    assert "Unsupported artifact schema version" in result2.stdout
+
 def test_deps_missing_json(tmp_path):
     result = runner.invoke(app, ["deps", "a.py", str(tmp_path)])
     assert result.exit_code == 1

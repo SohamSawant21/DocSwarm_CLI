@@ -33,9 +33,11 @@ def test_engine_execution_order_and_data_flow(
     mock_builder_instance = MockBuilder.return_value
     dummy_graph = GraphModel()
     mock_builder_instance.build.return_value = dummy_graph
-    
+
     mock_analyzer_instance = MockAnalyzer.return_value
-    mock_analyzer_instance.analyze.return_value = "Mock Analysis"
+    mock_analysis = Mock()
+    mock_analysis.analysis_state = "complete"
+    mock_analyzer_instance.analyze.return_value = mock_analysis
     
     mock_resolver_instance = MockResolver.return_value
     mock_resolver_instance.resolve.return_value = []
@@ -65,7 +67,7 @@ def test_engine_execution_order_and_data_flow(
     # Verify final result
     assert isinstance(result, AnalysisResult)
     assert result.graph == dummy_graph
-    assert result.analysis == "Mock Analysis"
+    assert result.analysis == mock_analysis
     assert isinstance(result.parsing_report, ParsingReport)
 
 @patch('core.engine.Path')

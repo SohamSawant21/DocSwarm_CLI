@@ -53,6 +53,9 @@ class ParsingReport(BaseModel):
 
 class AnalysisResult(BaseModel):
     """Result of the complete analysis pipeline."""
+    artifact_schema_version: str = "1.1"
+    docswarm_version: str = "0.2.0"
+    analysis_state: str = "complete"
     graph: GraphModel
     analysis: Any = None # Will be ArchitectureAnalysis, use Any to avoid circular import or define it here
     parsing_report: ParsingReport = Field(default_factory=ParsingReport)

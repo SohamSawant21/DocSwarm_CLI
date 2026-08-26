@@ -24,6 +24,7 @@ class Metrics(BaseModel):
 
 class ArchitectureAnalysis(BaseModel):
     health_score: int
+    analysis_state: str = "complete"
     metrics: Metrics
     cycles: List[List[str]]
     hotspots: List[Hotspot]
@@ -70,9 +71,21 @@ class ArchitectureAnalyzer:
         num_nodes = self.nx_graph.number_of_nodes()
         num_edges = self.nx_graph.number_of_edges()
         
-        # Calculate cycles deterministically
+        # 2. Bounded Cycle Detection
+        cycles = []
+        analysis_state = "complete"
+        # Deterministically order nodes so edges/cycles yield identically
+        # NetworkX simple_cycles is deterministic if the graph is deterministic.
+        sorted_graph = nx.DiGraph()
+        sorted_graph.add_nodes_from(sorted(self.nx_graph.nodes()))
+        sorted_graph.add_edges_from(sorted(self.nx_graph.edges()))
+        
         try:
-            cycles = list(nx.simple_cycles(self.nx_graph))
+            for idx, cycle in enumerate(nx.simple_cycles(sorted_graph)):
+                if idx >= 100:
+                    analysis_state = "bounded"
+                    break
+                cycles.append(cycle)
         except Exception:
             cycles = []
             
@@ -111,6 +124,7 @@ class ArchitectureAnalyzer:
         
         return ArchitectureAnalysis(
             health_score=final_score,
+            analysis_state=analysis_state,
             metrics=metrics,
             cycles=cycles,
             hotspots=hotspots,

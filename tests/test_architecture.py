@@ -353,3 +353,65 @@ def test_multiple_violations_accumulation_and_floor():
     
     # Total penalty = 110, Health score = max(0, 100 - 110) = 0
     assert result.health_score == 0
+
+def test_deterministic_cycle_bounding():
+    """Verify that DocSwarm consumes at most 100 yielded cycles and sets analysis_state='bounded'."""
+    from core.config import DocSwarmConfig
+    
+    # Create a complete graph with >=100 cycles
+    # A complete digraph with 6 nodes has 409 cycles, which exceeds our 100 budget
+    nx_graph = nx.relabel_nodes(nx.complete_graph(6, create_using=nx.DiGraph()), lambda x: f"node_{x}")
+    
+    domain_model = GraphModel()
+    for i in range(6):
+        node_id = f"node_{i}"
+        domain_model.add_node(FileNode(id=node_id, path=node_id, name=node_id))
+        
+    # Test boundary where >100 exist
+    analyzer = ArchitectureAnalyzer(domain_model, nx_graph, DocSwarmConfig())
+    result = analyzer.analyze()
+    
+    # Create identical graph but shuffle insertion order
+    import random
+    edges = list(nx_graph.edges())
+    random.seed(42)
+    random.shuffle(edges)
+    
+    nx_graph_shuffled = nx.DiGraph()
+    nx_graph_shuffled.add_nodes_from(reversed(list(nx_graph.nodes())))
+    nx_graph_shuffled.add_edges_from(edges)
+    
+    domain_model_shuffled = GraphModel()
+    for node_id in reversed(list(nx_graph.nodes())):
+        domain_model_shuffled.add_node(FileNode(id=node_id, path=node_id, name=node_id))
+        
+    analyzer_shuffled = ArchitectureAnalyzer(domain_model_shuffled, nx_graph_shuffled, DocSwarmConfig())
+    result_shuffled = analyzer_shuffled.analyze()
+    
+    # Verify deterministic output (both cycles bounded at 100 and identical)
+    assert len(result.cycles) == 100
+    assert result.analysis_state == "bounded"
+    
+    assert len(result_shuffled.cycles) == 100
+    assert result_shuffled.analysis_state == "bounded"
+    
+    # Prove exact identity of the list of cycles (they are lists of strings)
+    assert result.cycles == result_shuffled.cycles
+    
+    # ARCH-001 penalty applies exactly once
+    cycle_violations = [v for v in result.violations if v.rule_id == "ARCH-001"]
+    assert len(cycle_violations) == 1
+    assert cycle_violations[0].penalty == 15
+    
+    # Test where <100 exist
+    nx_graph_small = nx.relabel_nodes(nx.complete_graph(3, create_using=nx.DiGraph()), lambda x: f"node_{x}") # 5 cycles
+    domain_model_small = GraphModel()
+    for i in range(3):
+        node_id = f"node_{i}"
+        domain_model_small.add_node(FileNode(id=node_id, path=node_id, name=node_id))
+        
+    analyzer_small = ArchitectureAnalyzer(domain_model_small, nx_graph_small, DocSwarmConfig())
+    result_small = analyzer_small.analyze()
+    
+    assert len(result_small.cycles) == 5
+    assert result_small.analysis_state == "complete"

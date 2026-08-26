@@ -31,16 +31,29 @@ def get_workspace_dir(path: str) -> Path:
 def load_graph_json(target: Path) -> tuple[GraphModel, ArchitectureAnalysis]:
     json_path = target / ".docswarm" / "graph.json"
     if not json_path.exists():
-        console.print(f"[red]Error: Analysis artifacts not found at '{json_path}'. Run 'docswarm analyze' first.[/red]")
+        console.print("[red]Analysis artifacts not found. Run 'docswarm analyze' first.[/red]")
         raise typer.Exit(code=1)
         
     try:
         data = json.loads(json_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        console.print("[red]graph.json is corrupted or malformed.[/red]")
+        raise typer.Exit(code=1)
+        
+    schema_version = data.get("artifact_schema_version")
+    if not schema_version or schema_version == "1.0":
+        console.print("[red]Artifact schema version 1.0 is not supported in v0.2.0. Please run 'docswarm analyze' to upgrade.[/red]")
+        raise typer.Exit(code=1)
+    elif schema_version != "1.1":
+        console.print("[red]Unsupported artifact schema version. Please upgrade docswarm.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
         domain_model = GraphModel.model_validate(data["graph"])
         analysis = ArchitectureAnalysis.model_validate(data["analysis"])
         return domain_model, analysis
-    except Exception as e:
-        console.print(f"[red]Error parsing graph.json: {e}[/red]")
+    except KeyError as e:
+        console.print(f"[red]Malformed artifact: missing required field {e}[/red]")
         raise typer.Exit(code=1)
 
 @app.command("analyze")
@@ -70,7 +83,10 @@ def analyze(path: str = typer.Argument(".")):
             # 6. Reporting
             out_dir = str(target / ".docswarm")
             MarkdownReporter.render(domain_model, analysis, out_dir)
-            JSONExporter.export(domain_model, analysis, out_dir)
+            JSONExporter.export(result, out_dir)
+            
+            from reports.html_reporter import HTMLReporter
+            HTMLReporter.export(result, out_dir)
             
             dot_path = GraphvizReporter.export_dot(domain_model, analysis, out_dir)
             try:
@@ -89,6 +105,7 @@ def analyze(path: str = typer.Argument(".")):
     summary.add_column("Value", style="magenta")
     
     summary.add_row("Health Score", f"{analysis.health_score}/100")
+    summary.add_row("Analysis State", f"[yellow]{result.analysis_state}[/yellow]" if result.analysis_state == "bounded" else f"[green]{result.analysis_state}[/green]")
     summary.add_row("Files Scanned", str(len(file_nodes)))
     summary.add_row("Graph Nodes", str(analysis.metrics.num_nodes))
     summary.add_row("Internal Edges", str(analysis.metrics.num_edges))
