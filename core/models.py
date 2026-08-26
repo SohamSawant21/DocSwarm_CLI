@@ -44,7 +44,15 @@ class GraphModel(BaseModel):
                 })
         return edges
 
+class ParsingReport(BaseModel):
+    """Tracks errors and skips during the analysis pipeline."""
+    skipped_binary: List[str] = Field(default_factory=list)
+    skipped_oversized: List[str] = Field(default_factory=list)
+    syntax_errors: List[str] = Field(default_factory=list)
+    parser_exceptions: Dict[str, str] = Field(default_factory=dict)
+
 class AnalysisResult(BaseModel):
     """Result of the complete analysis pipeline."""
     graph: GraphModel
-    report: str
+    analysis: Any = None # Will be ArchitectureAnalysis, use Any to avoid circular import or define it here
+    parsing_report: ParsingReport = Field(default_factory=ParsingReport)

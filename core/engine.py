@@ -1,64 +1,81 @@
-from typing import Protocol, List, Optional
-from pydantic import BaseModel
-from core.models import FileNode, GraphModel, AnalysisResult
+from core.models import FileNode, GraphModel, AnalysisResult, ParsingReport
+from scanner.scanner import WorkspaceScanner
+from parsers.registry import ParserRegistry
+from parsers.python import PythonParser
+from parsers.javascript import JavaScriptParser
+from parsers.typescript import TypeScriptParser
+from resolver.resolver import WorkspaceResolver
+from graph.builder import GraphBuilder
+from architecture.analyzer import ArchitectureAnalyzer, ArchitectureAnalysis
+from pathlib import Path
+import logging
 
-# Interfaces (Protocols) for the analysis pipeline stages
-class Scanner(Protocol):
-    def scan(self, target_path: str) -> List[FileNode]:
-        """Scans the target path and returns a list of discovered files."""
-        ...
-
-class Analyzer(Protocol):
-    def analyze(self, files: List[FileNode]) -> GraphModel:
-        """Analyzes the files and constructs a dependency graph."""
-        ...
-
-class Reporter(Protocol):
-    def generate_report(self, graph: GraphModel) -> str:
-        """Generates a final report from the analyzed graph."""
-        ...
-
-# Dummy Implementations for Phase 1
-class DummyScanner:
-    def scan(self, target_path: str) -> List[FileNode]:
-        # Return a dummy file node
-        return [FileNode(id="dummy/path.py", path=f"{target_path}/dummy/path.py", name="path.py", role="Entry Points")]
-
-class DummyAnalyzer:
-    def analyze(self, files: List[FileNode]) -> GraphModel:
-        graph = GraphModel()
-        for f in files:
-            graph.add_node(f)
-        return graph
-
-class DummyReporter:
-    def generate_report(self, graph: GraphModel) -> str:
-        return f"Dummy Report: {len(graph.nodes)} nodes analyzed."
+logger = logging.getLogger(__name__)
 
 class AnalysisService:
     """
     Orchestrates the codebase analysis lifecycle:
-    Scanner -> Analyzer -> Reporter
+    Scanner -> Parser -> Resolver -> Graph Builder -> Analyzer
     """
-    def __init__(self, 
-                 scanner: Optional[Scanner] = None, 
-                 analyzer: Optional[Analyzer] = None, 
-                 reporter: Optional[Reporter] = None):
-        self.scanner = scanner or DummyScanner()
-        self.analyzer = analyzer or DummyAnalyzer()
-        self.reporter = reporter or DummyReporter()
+    def __init__(self):
+        self.scanner = WorkspaceScanner()
+        self.registry = ParserRegistry()
+        
+        # Explicit parser registration (Phase 1 requirement)
+        self.registry.register("python", PythonParser())
+        self.registry.register("javascript", JavaScriptParser())
+        self.registry.register("typescript", TypeScriptParser())
         
     def analyze(self, target_path: str) -> AnalysisResult:
         """
         Executes the analysis pipeline synchronously and locally.
         """
+        target = Path(target_path).resolve()
+        
         # 1. Scan
-        files = self.scanner.scan(target_path)
+        file_nodes = self.scanner.scan(str(target))
         
-        # 2. Analyze
-        graph = self.analyzer.analyze(files)
+        parsing_report = ParsingReport(
+            skipped_binary=self.scanner.skipped_binary,
+            skipped_oversized=self.scanner.skipped_oversized,
+        )
         
-        # 3. Report
-        report = self.reporter.generate_report(graph)
+        # 2. Parse & 3. Resolve
+        for node in file_nodes:
+            if not node.language:
+                continue
+                
+            try:
+                parser = self.registry.get_parser(node.language)
+            except (NotImplementedError, ValueError):
+                continue
+                
+            abs_path = target / node.id
+            try:
+                content = abs_path.read_bytes()
+                metadata = parser.parse(node, content)
+                
+                if metadata.has_syntax_error:
+                    parsing_report.syntax_errors.append(node.id)
+                    
+                resolver = WorkspaceResolver(file_nodes, str(target))
+                node.dependencies = resolver.resolve(node, metadata)
+                
+            except Exception as e:
+                # Catch, log, and report parser_exception without halting
+                logger.debug(f"Failed to parse {node.id}: {e}")
+                parsing_report.parser_exceptions[node.id] = str(e)
+
+        # 4. Build Graph
+        builder = GraphBuilder()
+        domain_model = builder.build(file_nodes)
         
-        return AnalysisResult(graph=graph, report=report)
+        # 5. Architecture Analysis
+        analyzer = ArchitectureAnalyzer(domain_model, builder.nx_graph)
+        analysis = analyzer.analyze()
+        
+        return AnalysisResult(
+            graph=domain_model,
+            analysis=analysis,
+            parsing_report=parsing_report
+        )

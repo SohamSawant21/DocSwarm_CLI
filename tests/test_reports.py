@@ -78,7 +78,7 @@ def test_graphviz_dot_export(tmp_path, dummy_data):
     domain_model, nx_graph, analysis = dummy_data
     out_dir = tmp_path / ".docswarm"
     
-    path = GraphvizReporter.export_dot(nx_graph, str(out_dir))
+    path = GraphvizReporter.export_dot(domain_model, analysis, str(out_dir))
     
     assert os.path.exists(path)
     content = Path(path).read_text(encoding="utf-8")
@@ -92,7 +92,7 @@ def test_graphviz_svg_success(tmp_path, dummy_data):
     """G. SVG rendering success."""
     domain_model, nx_graph, analysis = dummy_data
     out_dir = tmp_path / ".docswarm"
-    dot_path = GraphvizReporter.export_dot(nx_graph, str(out_dir))
+    dot_path = GraphvizReporter.export_dot(domain_model, analysis, str(out_dir))
     
     # We rely on system 'dot' being available as verified in prerequisite.
     svg_path = GraphvizReporter.render_svg(dot_path, str(out_dir))
@@ -102,7 +102,7 @@ def test_graphviz_svg_failure(tmp_path, dummy_data):
     """H. SVG rendering failure when Graphviz missing."""
     domain_model, nx_graph, analysis = dummy_data
     out_dir = tmp_path / ".docswarm"
-    dot_path = GraphvizReporter.export_dot(nx_graph, str(out_dir))
+    dot_path = GraphvizReporter.export_dot(domain_model, analysis, str(out_dir))
     
     with mock.patch("subprocess.run", side_effect=FileNotFoundError):
         with pytest.raises(RuntimeError, match="Graphviz 'dot' executable not found"):

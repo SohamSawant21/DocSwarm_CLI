@@ -123,3 +123,42 @@ def test_language_detection(tmp_path):
     for node in nodes:
         expected_lang = files[node.id]
         assert node.language == expected_lang
+
+def test_max_file_size_limits(tmp_path):
+    """Verify that file size limits correctly bound scanning."""
+    # 1. Normal file below limit
+    normal_file = tmp_path / "normal.py"
+    normal_file.write_bytes(b"a" * 1024) # 1 KB
+    
+    # 2. File exactly at the limit (using 2KB limit for this test)
+    limit_file = tmp_path / "limit.py"
+    limit_file.write_bytes(b"b" * 2048) # 2 KB
+    
+    # 3. Oversized file (1 byte over)
+    oversized_file = tmp_path / "oversized.py"
+    oversized_file.write_bytes(b"c" * 2049) # 2 KB + 1 byte
+    
+    # Scan with custom 2KB limit
+    scanner = WorkspaceScanner(max_file_size_kb=2)
+    nodes = scanner.scan(str(tmp_path))
+    
+    ids = {node.id for node in nodes}
+    
+    # Normal and exactly-at-limit should be included
+    assert "normal.py" in ids
+    assert "limit.py" in ids
+    
+    # Oversized should be skipped and reported
+    assert "oversized.py" not in ids
+    assert "oversized.py" in scanner.skipped_oversized
+    
+    # 4. Existing behavior unchanged (default limit)
+    default_scanner = WorkspaceScanner()
+    default_nodes = default_scanner.scan(str(tmp_path))
+    default_ids = {node.id for node in default_nodes}
+    
+    # Since default limit is 2048 KB (2MB), all 3 files should be included
+    assert "normal.py" in default_ids
+    assert "limit.py" in default_ids
+    assert "oversized.py" in default_ids
+    assert len(default_scanner.skipped_oversized) == 0

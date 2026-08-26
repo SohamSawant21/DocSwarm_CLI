@@ -19,6 +19,8 @@ from reports.graphviz import GraphvizReporter
 app = typer.Typer(help="DocSwarm CLI for architecture analysis.")
 console = Console()
 
+from core.engine import AnalysisService
+
 def get_workspace_dir(path: str) -> Path:
     target = Path(path).resolve()
     if not target.exists():
@@ -50,52 +52,20 @@ def analyze(path: str = typer.Argument(".")):
     
     with console.status(f"[bold green]Analyzing workspace at {target}..."):
         try:
-            # 1. Scan
-            scanner = WorkspaceScanner()
-            file_nodes = scanner.scan(str(target))
+            service = AnalysisService()
+            result = service.analyze(str(target))
             
-            # 2. Parse
-            registry = ParserRegistry()
-            # Register parsers manually if they weren't imported/registered
-            from parsers.python import PythonParser
-            from parsers.javascript import JavaScriptParser
-            from parsers.typescript import TypeScriptParser
-            registry.register("python", PythonParser())
-            registry.register("javascript", JavaScriptParser())
-            registry.register("typescript", TypeScriptParser())
-
-            for node in file_nodes:
-                if node.language:
-                    try:
-                        parser = registry.get_parser(node.language)
-                        # Note: We need the full absolute path for Tree-sitter
-                        abs_path = str(target / node.id)
-                        try:
-                            content = Path(abs_path).read_bytes()
-                            metadata = parser.parse(node, content)
-                            # 3. Resolve
-                            resolver = WorkspaceResolver(file_nodes, str(target))
-                            node.dependencies = resolver.resolve(node, metadata)
-                        except Exception as e:
-                            # Skip files that can't be read or parsed safely
-                            pass
-                    except (NotImplementedError, ValueError):
-                        # Unsupported language
-                        pass
-
-            # 4. Build Graph
-            builder = GraphBuilder()
-            domain_model = builder.build(file_nodes)
-            
-            # 5. Architecture Analysis
-            analyzer = ArchitectureAnalyzer(domain_model, builder.nx_graph)
-            analysis = analyzer.analyze()
+            domain_model = result.graph
+            analysis = result.analysis
+            parsing_report = result.parsing_report
+            file_nodes = list(domain_model.nodes.values())
             
             # 6. Reporting
             out_dir = str(target / ".docswarm")
             MarkdownReporter.render(domain_model, analysis, out_dir)
             JSONExporter.export(domain_model, analysis, out_dir)
-            dot_path = GraphvizReporter.export_dot(builder.nx_graph, out_dir)
+            
+            dot_path = GraphvizReporter.export_dot(domain_model, analysis, out_dir)
             try:
                 GraphvizReporter.render_svg(dot_path, out_dir)
                 svg_status = "Generated"
@@ -119,8 +89,30 @@ def analyze(path: str = typer.Argument(".")):
     summary.add_row("Hotspots", str(len(analysis.hotspots)))
     summary.add_row("Rule Violations", str(len(analysis.violations)))
     
+    # Add parsing report details if any
+    if parsing_report.parser_exceptions:
+        summary.add_row("Parser Errors", str(len(parsing_report.parser_exceptions)))
+    if parsing_report.syntax_errors:
+        summary.add_row("Syntax Errors", str(len(parsing_report.syntax_errors)))
+    if parsing_report.skipped_binary or parsing_report.skipped_oversized:
+        skipped = len(parsing_report.skipped_binary) + len(parsing_report.skipped_oversized)
+        summary.add_row("Skipped Files", str(skipped))
+    
     console.print()
     console.print(Panel(summary, expand=False))
+    
+    if parsing_report.parser_exceptions:
+        console.print("[yellow]Files with parser exceptions:[/yellow]")
+        for f, err in parsing_report.parser_exceptions.items():
+            console.print(f"  - {f}: {err}")
+            
+    if parsing_report.syntax_errors:
+        console.print("[yellow]Files with syntax errors (parsed partially):[/yellow]")
+        for f in parsing_report.syntax_errors[:5]:
+            console.print(f"  - {f}")
+        if len(parsing_report.syntax_errors) > 5:
+            console.print(f"  ... and {len(parsing_report.syntax_errors) - 5} more.")
+            
     console.print(f"[green]Artifacts saved to:[/green] {out_dir}")
     if svg_status != "Generated":
         console.print(f"[yellow]SVG Status: {svg_status}[/yellow]")
@@ -210,20 +202,11 @@ def graph(path: str = typer.Argument(".")):
     Generate graph artifacts explicitly.
     """
     target = get_workspace_dir(path)
-    domain_model, _ = load_graph_json(target)
+    domain_model, analysis = load_graph_json(target)
     
-    import networkx as nx
-    nx_graph = nx.DiGraph()
-    for n_id, n in domain_model.nodes.items():
-        nx_graph.add_node(n_id, label=n.name, language=n.language, role=n.role)
-    for n_id, n in domain_model.nodes.items():
-        for d in n.dependencies:
-            if d.type == "import" and d.target_id in domain_model.nodes:
-                nx_graph.add_edge(n_id, d.target_id)
-                
     out_dir = str(target / ".docswarm")
     try:
-        dot_path = GraphvizReporter.export_dot(nx_graph, out_dir)
+        dot_path = GraphvizReporter.export_dot(domain_model, analysis, out_dir)
         console.print(f"[green]DOT generated at:[/green] {dot_path}")
         try:
             svg_path = GraphvizReporter.render_svg(dot_path, out_dir)

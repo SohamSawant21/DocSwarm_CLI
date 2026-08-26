@@ -50,6 +50,11 @@ class WorkspaceScanner:
     into a list of FileNode objects.
     """
 
+    def __init__(self, max_file_size_kb: int = 2048):
+        self.max_file_size_kb = max_file_size_kb
+        self.skipped_binary: List[str] = []
+        self.skipped_oversized: List[str] = []
+
     def scan(self, target_path: str) -> List[FileNode]:
         target = Path(target_path)
         
@@ -95,10 +100,15 @@ class WorkspaceScanner:
 
     def _process_file(self, file_path: Path, root_dir: Path) -> FileNode | None:
         """
-        Creates a FileNode for a given file if it is not binary.
-        Returns None if the file is binary or should be skipped.
+        Creates a FileNode for a given file if it is not binary and under the size limit.
+        Returns None if the file should be skipped.
         """
+        # Get relative path as ID, normalizing to forward slashes for cross-platform graph stability
+        rel_path = file_path.relative_to(root_dir)
+        node_id = rel_path.as_posix()
+
         if is_binary_file(file_path):
+            self.skipped_binary.append(node_id)
             return None
             
         try:
@@ -107,9 +117,9 @@ class WorkspaceScanner:
         except OSError:
             size = 0
             
-        # Get relative path as ID, normalizing to forward slashes for cross-platform graph stability
-        rel_path = file_path.relative_to(root_dir)
-        node_id = rel_path.as_posix()
+        if self.max_file_size_kb is not None and size > self.max_file_size_kb * 1024:
+            self.skipped_oversized.append(node_id)
+            return None
         
         language = EXTENSION_LANGUAGES.get(file_path.suffix.lower())
         
