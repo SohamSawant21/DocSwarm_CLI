@@ -33,13 +33,13 @@ def load_graph_json(target: Path) -> tuple[GraphModel, ArchitectureAnalysis]:
     if not json_path.exists():
         console.print("[red]Analysis artifacts not found. Run 'docswarm analyze' first.[/red]")
         raise typer.Exit(code=1)
-        
+
     try:
         data = json.loads(json_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         console.print("[red]graph.json is corrupted or malformed.[/red]")
         raise typer.Exit(code=1)
-        
+
     schema_version = data.get("artifact_schema_version")
     if not schema_version or schema_version == "1.0":
         console.print("[red]Artifact schema version 1.0 is not supported in v0.2.0. Please run 'docswarm analyze' to upgrade.[/red]")
@@ -62,32 +62,32 @@ def analyze(path: str = typer.Argument(".")):
     Run the complete architecture analysis pipeline.
     """
     target = get_workspace_dir(path)
-    
+
     from core.config import load_config, ConfigValidationError
     try:
         config = load_config(target)
     except ConfigValidationError as e:
         console.print(f"[red]Configuration Error: {e}[/red]")
         raise typer.Exit(code=1)
-        
+
     with console.status(f"[bold green]Analyzing workspace at {target}..."):
         try:
             service = AnalysisService(config=config)
             result = service.analyze(str(target))
-            
+
             domain_model = result.graph
             analysis = result.analysis
             parsing_report = result.parsing_report
             file_nodes = list(domain_model.nodes.values())
-            
+
             # 6. Reporting
             out_dir = str(target / ".docswarm")
             MarkdownReporter.render(domain_model, analysis, out_dir)
             JSONExporter.export(result, out_dir)
-            
+
             from reports.html_reporter import HTMLReporter
             HTMLReporter.export(result, out_dir)
-            
+
             dot_path = GraphvizReporter.export_dot(domain_model, analysis, out_dir)
             try:
                 GraphvizReporter.render_svg(dot_path, out_dir)
@@ -103,7 +103,7 @@ def analyze(path: str = typer.Argument(".")):
     summary = Table(title="Architecture Analysis Summary", show_header=False)
     summary.add_column("Metric", style="cyan")
     summary.add_column("Value", style="magenta")
-    
+
     summary.add_row("Health Score", f"{analysis.health_score}/100")
     summary.add_row("Analysis State", f"[yellow]{result.analysis_state}[/yellow]" if result.analysis_state == "bounded" else f"[green]{result.analysis_state}[/green]")
     summary.add_row("Files Scanned", str(len(file_nodes)))
@@ -112,7 +112,7 @@ def analyze(path: str = typer.Argument(".")):
     summary.add_row("Cycles", str(analysis.metrics.num_cycles))
     summary.add_row("Hotspots", str(len(analysis.hotspots)))
     summary.add_row("Rule Violations", str(len(analysis.violations)))
-    
+
     # Add parsing report details if any
     if parsing_report.parser_exceptions:
         summary.add_row("Parser Errors", str(len(parsing_report.parser_exceptions)))
@@ -121,22 +121,22 @@ def analyze(path: str = typer.Argument(".")):
     if parsing_report.skipped_binary or parsing_report.skipped_oversized:
         skipped = len(parsing_report.skipped_binary) + len(parsing_report.skipped_oversized)
         summary.add_row("Skipped Files", str(skipped))
-    
+
     console.print()
     console.print(Panel(summary, expand=False))
-    
+
     if parsing_report.parser_exceptions:
         console.print("[yellow]Files with parser exceptions:[/yellow]")
         for f, err in parsing_report.parser_exceptions.items():
             console.print(f"  - {f}: {err}")
-            
+
     if parsing_report.syntax_errors:
         console.print("[yellow]Files with syntax errors (parsed partially):[/yellow]")
         for f in parsing_report.syntax_errors[:5]:
             console.print(f"  - {f}")
         if len(parsing_report.syntax_errors) > 5:
             console.print(f"  ... and {len(parsing_report.syntax_errors) - 5} more.")
-            
+
     console.print(f"[green]Artifacts saved to:[/green] {out_dir}")
     if svg_status != "Generated":
         console.print(f"[yellow]SVG Status: {svg_status}[/yellow]")
@@ -148,37 +148,37 @@ def deps(file: str = typer.Argument(...), path: str = typer.Argument(".")):
     """
     target = get_workspace_dir(path)
     domain_model, _ = load_graph_json(target)
-    
+
     # Normalize path separators for lookups
     file_id = Path(file).as_posix()
-    
+
     if file_id not in domain_model.nodes:
         console.print(f"[red]Error: File '{file_id}' not found in the graph.[/red]")
         raise typer.Exit(code=1)
-        
+
     node = domain_model.nodes[file_id]
-    
+
     # Calculate incoming by scanning others
     incoming = []
     for other_id, other_node in domain_model.nodes.items():
         for d in other_node.dependencies:
             if d.type == "import" and d.target_id == file_id:
                 incoming.append(other_id)
-                
+
     # Outgoing
     outgoing = [d.target_id for d in node.dependencies if d.type == "import"]
     external = [d.target_id for d in node.dependencies if d.type == "external"]
     unresolved = [d.target_id for d in node.dependencies if d.type in ("unresolved", "ambiguous")]
-    
+
     t = Table(title=f"Dependencies: {file_id}")
     t.add_column("Category", style="cyan")
     t.add_column("Files", style="green")
-    
+
     t.add_row("Incoming (Internal)", "\n".join(incoming) if incoming else "None")
     t.add_row("Outgoing (Internal)", "\n".join(outgoing) if outgoing else "None")
     t.add_row("External", "\n".join(external) if external else "None")
     t.add_row("Unresolved/Ambiguous", "\n".join(unresolved) if unresolved else "None")
-    
+
     console.print(t)
 
 @app.command("inspect")
@@ -188,27 +188,27 @@ def inspect(file: str = typer.Argument(...), path: str = typer.Argument(".")):
     """
     target = get_workspace_dir(path)
     domain_model, analysis = load_graph_json(target)
-    
+
     # Normalize path separators for lookups
     file_id = Path(file).as_posix()
-    
+
     if file_id not in domain_model.nodes:
         console.print(f"[red]Error: File '{file_id}' not found in the graph.[/red]")
         raise typer.Exit(code=1)
-        
+
     node = domain_model.nodes[file_id]
     role = analysis.role_classifications.get(file_id)
     fin = analysis.metrics.fan_in.get(file_id, 0)
     fout = analysis.metrics.fan_out.get(file_id, 0)
-    
+
     hotspots = [h for h in analysis.hotspots if h.node == file_id]
     cycles = [c for c in analysis.cycles if file_id in c]
     violations = [v for v in analysis.violations if file_id in v.affected_files]
-    
+
     t = Table(title=f"Inspection: {file_id}", show_header=False)
     t.add_column("Property", style="cyan")
     t.add_column("Value")
-    
+
     t.add_row("Path", node.path)
     if role:
         t.add_row("Role", f"{role.role} (confidence: {role.confidence})")
@@ -217,7 +217,7 @@ def inspect(file: str = typer.Argument(...), path: str = typer.Argument(".")):
     t.add_row("Hotspot", "Yes" if hotspots else "No")
     t.add_row("Involved in Cycles", str(len(cycles)))
     t.add_row("Architecture Violations", str(len(violations)))
-    
+
     console.print(t)
 
 @app.command("graph")
@@ -227,7 +227,7 @@ def graph(path: str = typer.Argument(".")):
     """
     target = get_workspace_dir(path)
     domain_model, analysis = load_graph_json(target)
-    
+
     out_dir = str(target / ".docswarm")
     try:
         dot_path = GraphvizReporter.export_dot(domain_model, analysis, out_dir)
@@ -249,7 +249,7 @@ def report(path: str = typer.Argument(".")):
     """
     target = get_workspace_dir(path)
     domain_model, analysis = load_graph_json(target)
-    
+
     try:
         out_dir = str(target / ".docswarm")
         report_path = MarkdownReporter.render(domain_model, analysis, out_dir)
@@ -257,3 +257,100 @@ def report(path: str = typer.Argument(".")):
     except Exception as e:
         console.print(f"[red]Report generation failed: {e}[/red]")
         raise typer.Exit(code=1)
+
+@app.command("query")
+def query(
+    path: str = typer.Argument("."),
+    role: str | None = typer.Option(None, "--role", help="Filter by role name"),
+    has_cycles: bool = typer.Option(False, "--has-cycles", help="Filter nodes involved in cycles"),
+    min_fan_in: int | None = typer.Option(None, "--min-fan-in", help="Minimum incoming dependencies"),
+    min_fan_out: int | None = typer.Option(None, "--min-fan-out", help="Minimum outgoing dependencies"),
+    hotspot: bool = typer.Option(False, "--hotspot", help="Filter nodes flagged as hotspots"),
+    has_violations: bool = typer.Option(False, "--has-violations", help="Filter nodes violating rules")
+):
+    """
+    Query the existing architecture graph based on architectural metrics.
+    """
+    # 1. Zero-filter check
+    if not any([role, has_cycles, min_fan_in is not None, min_fan_out is not None, hotspot, has_violations]):
+        raise typer.BadParameter("At least one filter must be provided.")
+
+    # 2. Validation
+    if min_fan_in is not None and min_fan_in < 0:
+        raise typer.BadParameter("--min-fan-in must be >= 0")
+    if min_fan_out is not None and min_fan_out < 0:
+        raise typer.BadParameter("--min-fan-out must be >= 0")
+
+    # 3. Load artifacts
+    target = get_workspace_dir(path)
+    domain_model, analysis = load_graph_json(target)
+
+    # Pre-compute Sets for O(1) lookups
+
+    # Cycles
+    cycle_nodes = set()
+    if has_cycles:
+        if analysis.analysis_state == "bounded":
+            Console(stderr=True).print("Warning: Artifact was bounded. --has-cycles results represent an incomplete subset of total cycles.")
+        for cycle in analysis.cycles:
+            for node_id in cycle:
+                cycle_nodes.add(node_id)
+
+    # Hotspots
+    hotspot_nodes = set()
+    if hotspot:
+        for hs in analysis.hotspots:
+            hotspot_nodes.add(hs.node)
+
+    # Violations
+    violation_nodes = set()
+    if has_violations:
+        for v in analysis.violations:
+            for node_id in v.affected_files:
+                violation_nodes.add(node_id)
+
+    # 4. Strict AND Filtering
+    matching_nodes = []
+
+    for node_id, node_data in domain_model.nodes.items():
+        match = True
+
+        if role is not None:
+            node_role = "Unknown"
+            if node_id in analysis.role_classifications:
+                node_role = analysis.role_classifications[node_id].role
+            if node_role.lower() != role.lower():
+                match = False
+
+        if has_cycles and match:
+            if node_id not in cycle_nodes:
+                match = False
+
+        if hotspot and match:
+            if node_id not in hotspot_nodes:
+                match = False
+
+        if has_violations and match:
+            if node_id not in violation_nodes:
+                match = False
+
+        if min_fan_in is not None and match:
+            fin = analysis.metrics.fan_in.get(node_id, 0)
+            if fin < min_fan_in:
+                match = False
+
+        if min_fan_out is not None and match:
+            fout = analysis.metrics.fan_out.get(node_id, 0)
+            if fout < min_fan_out:
+                match = False
+
+        if match:
+            matching_nodes.append(node_id)
+
+    # 5. Result Uniqueness and Output
+    # Deduplication is natively handled since we iterate over unique node_ids from domain_model.nodes.keys()
+    matching_nodes.sort()
+
+    for node_id in matching_nodes:
+        # stdout strictly for pipelining
+        typer.echo(node_id)
