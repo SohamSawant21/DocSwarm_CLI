@@ -30,35 +30,40 @@ class ArchitectureAnalysis(BaseModel):
     role_classifications: Dict[str, RoleClassification]
     violations: List[RuleViolation]
 
+import fnmatch
+from core.config import RoleConfig, RuleConfig
+
 class RoleClassifier:
-    @staticmethod
-    def classify(node: FileNode) -> RoleClassification:
+    def __init__(self, roles: List[RoleConfig]):
+        self.roles = roles
+
+    def classify(self, node: FileNode) -> RoleClassification:
+        # node.id is the stable relative path with forward slashes
+        rel_path = node.id.lower()
         name_lower = node.name.lower()
-        path_lower = node.path.lower()
         
-        # Deterministic heuristic mapping
-        if "controller" in name_lower or "controller" in path_lower:
-            return RoleClassification(role="Controller", confidence="suspected", reason="filename or path contains 'controller'")
-        if "service" in name_lower or "service" in path_lower:
-            return RoleClassification(role="Service", confidence="suspected", reason="filename or path contains 'service'")
-        if "model" in name_lower or "entity" in name_lower or "models/" in path_lower:
-            return RoleClassification(role="Model", confidence="suspected", reason="filename or path contains 'model' or 'entity'")
-        if "repository" in name_lower or "dao" in name_lower or "repo" in name_lower:
-            return RoleClassification(role="Repository", confidence="suspected", reason="filename or path contains 'repository' or 'dao'")
-        if "util" in name_lower or "helper" in name_lower:
-            return RoleClassification(role="Utility", confidence="suspected", reason="filename or path contains 'util' or 'helper'")
-        if "component" in path_lower or name_lower.endswith(".tsx") or name_lower.endswith(".jsx"):
-            return RoleClassification(role="Component", confidence="suspected", reason="filename or path indicates UI component")
-        if "main" in name_lower or "index" in name_lower or "app" in name_lower:
-            return RoleClassification(role="Entry Point", confidence="suspected", reason="filename indicates entry point")
-            
-        return RoleClassification(role="Unknown", confidence="none", reason="no heuristic patterns matched")
+        for role in self.roles:
+            for pattern in role.patterns:
+                pat_lower = pattern.lower()
+                # Match against either the relative path or the bare filename
+                if fnmatch.fnmatch(rel_path, pat_lower) or fnmatch.fnmatch(name_lower, pat_lower):
+                    return RoleClassification(
+                        role=role.role_name,
+                        confidence="suspected",
+                        reason=f"matches pattern '{pattern}'"
+                    )
+                    
+        return RoleClassification(role="Unknown", confidence="none", reason="no pattern matched")
+
+from core.config import DocSwarmConfig
 
 class ArchitectureAnalyzer:
-    def __init__(self, domain_model: GraphModel, nx_graph: nx.DiGraph):
+    def __init__(self, domain_model: GraphModel, nx_graph: nx.DiGraph, config: DocSwarmConfig | None = None):
         self.domain_model = domain_model
         self.nx_graph = nx_graph
-        self.rule_engine = RuleEngine()
+        self.config = config or DocSwarmConfig()
+        self.rule_engine = RuleEngine(self.config.rules)
+        self.role_classifier = RoleClassifier(self.config.roles)
         
     def analyze(self) -> ArchitectureAnalysis:
         # 1. Base Metrics
@@ -86,7 +91,7 @@ class ArchitectureAnalyzer:
         # 3. Role Classification
         roles = {}
         for node_id, node in self.domain_model.nodes.items():
-            roles[node_id] = RoleClassifier.classify(node)
+            roles[node_id] = self.role_classifier.classify(node)
             
         # 4. Hotspots (Heuristic: fan-in >= 5 OR fan-out >= 7)
         hotspots = []

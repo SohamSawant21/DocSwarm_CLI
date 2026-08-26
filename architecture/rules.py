@@ -11,14 +11,16 @@ class RuleViolation(BaseModel):
     status: str
     reason: str
 
+from core.config import RuleConfig
+
 class RuleEngine:
-    def __init__(self):
-        pass
+    def __init__(self, rules: List[RuleConfig]):
+        self.rules = rules
 
     def evaluate(self, nx_graph: nx.DiGraph, cycles: List[List[str]], roles: Dict[str, Any]) -> List[RuleViolation]:
         violations = []
         
-        # Rule A: Circular Dependency
+        # Rule A: Circular Dependency (Structural, non-configurable)
         if len(cycles) > 0:
             # Penalize once per existence of cycles (-15)
             affected = set()
@@ -35,33 +37,22 @@ class RuleEngine:
                 reason="Graph contains one or more cycles."
             ))
             
-        # Rule B: Suspected Layer Violation
-        # E.g., Model -> Controller is a violation.
+        # Rule B: Configurable Layer Violations
         for u, v in nx_graph.edges():
             role_u = roles.get(u)
             role_v = roles.get(v)
             
             if role_u and role_v:
-                if role_u.role == "Model" and role_v.role == "Controller":
-                    violations.append(RuleViolation(
-                        rule_id="ARCH-002",
-                        severity="medium",
-                        message=f"Model {u} depends on Controller {v}.",
-                        penalty=10,  # Penalized per violation instance
-                        affected_files=[u, v],
-                        status="suspected",
-                        reason="Models typically should not depend on Controllers in layered architectures."
-                    ))
-                elif role_u.role == "Model" and role_v.role == "Service":
-                    # Another common layered violation if strict layering is assumed
-                    violations.append(RuleViolation(
-                        rule_id="ARCH-003",
-                        severity="low",
-                        message=f"Model {u} depends on Service {v}.",
-                        penalty=5,
-                        affected_files=[u, v],
-                        status="suspected",
-                        reason="Models typically should not depend on Services."
-                    ))
+                for rule in self.rules:
+                    if role_u.role == rule.source_role and role_v.role == rule.forbidden_target_role:
+                        violations.append(RuleViolation(
+                            rule_id=rule.id,
+                            severity=rule.severity,
+                            message=f"{rule.source_role} {u} depends on {rule.forbidden_target_role} {v}.",
+                            penalty=rule.penalty,  # Penalized per violation instance
+                            affected_files=[u, v],
+                            status="suspected",
+                            reason=rule.message
+                        ))
 
         return violations

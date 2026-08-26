@@ -26,18 +26,18 @@ class RoleConfig(BaseModel):
 
 class RuleConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    id: str
+    id: str = Field(min_length=1)
     source_role: str
     forbidden_target_role: str
-    severity: str
-    penalty: int
+    severity: Literal["low", "medium", "high", "critical"]
+    penalty: int = Field(ge=0)
     message: str
 
 def _default_roles() -> List[RoleConfig]:
     return [
         RoleConfig(role_name="Controller", patterns=["*controller*"]),
         RoleConfig(role_name="Service", patterns=["*service*"]),
-        RoleConfig(role_name="Model", patterns=["*model*", "*entity*", "models/*"]),
+        RoleConfig(role_name="Model", patterns=["*model*", "*entity*", "*models/*"]),
         RoleConfig(role_name="Repository", patterns=["*repository*", "*dao*", "*repo*"]),
         RoleConfig(role_name="Utility", patterns=["*util*", "*helper*"]),
         RoleConfig(role_name="Component", patterns=["*component*", "*.tsx", "*.jsx"]),
@@ -52,7 +52,7 @@ def _default_rules() -> List[RuleConfig]:
             forbidden_target_role="Controller",
             severity="medium",
             penalty=10,
-            message="Model depends on Controller."
+            message="Models typically should not depend on Controllers in layered architectures."
         ),
         RuleConfig(
             id="ARCH-003",
@@ -60,7 +60,7 @@ def _default_rules() -> List[RuleConfig]:
             forbidden_target_role="Service",
             severity="low",
             penalty=5,
-            message="Model depends on Service."
+            message="Models typically should not depend on Services."
         )
     ]
 

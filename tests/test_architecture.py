@@ -63,7 +63,7 @@ def test_score_floor():
                 RuleViolation(rule_id='EVIL', severity='high', message='Evil', penalty=500, affected_files=[], status='suspected', reason='evil')
             ]
             
-    analyzer.rule_engine = EvilRuleEngine()
+    analyzer.rule_engine = EvilRuleEngine(analyzer.config.rules)
     result = analyzer.analyze()
     
     assert result.health_score == 0
@@ -107,36 +107,39 @@ def test_hotspot_detection():
 
 def test_role_classification():
     """H. Role classification & I. Explanation."""
+    from core.config import DocSwarmConfig
+    classifier = RoleClassifier(DocSwarmConfig().roles)
+    
     f1 = FileNode(id="UserController.ts", path="UserController.ts", name="UserController.ts")
-    r1 = RoleClassifier.classify(f1)
+    r1 = classifier.classify(f1)
     assert r1.role == "Controller"
-    assert "contains 'controller'" in r1.reason
+    assert "matches pattern" in r1.reason
     
     f2 = FileNode(id="UserService.ts", path="UserService.ts", name="UserService.ts")
-    r2 = RoleClassifier.classify(f2)
+    r2 = classifier.classify(f2)
     assert r2.role == "Service"
     assert r2.confidence == "suspected"
     
     f3 = FileNode(id="UserRepository.ts", path="UserRepository.ts", name="UserRepository.ts")
-    r3 = RoleClassifier.classify(f3)
+    r3 = classifier.classify(f3)
     assert r3.role == "Repository"
     
     f4 = FileNode(id="unknown.py", path="unknown.py", name="unknown.py")
-    r4 = RoleClassifier.classify(f4)
+    r4 = classifier.classify(f4)
     assert r4.role == "Unknown"
     assert r4.confidence == "none"
 
     # Verify overlapping priority
-    r5 = RoleClassifier.classify(FileNode(id="UserService.tsx", path="UserService.tsx", name="UserService.tsx"))
+    r5 = classifier.classify(FileNode(id="UserService.tsx", path="UserService.tsx", name="UserService.tsx"))
     assert r5.role == "Service"
     
-    r6 = RoleClassifier.classify(FileNode(id="UserController.tsx", path="UserController.tsx", name="UserController.tsx"))
+    r6 = classifier.classify(FileNode(id="UserController.tsx", path="UserController.tsx", name="UserController.tsx"))
     assert r6.role == "Controller"
     
-    r7 = RoleClassifier.classify(FileNode(id="UserRepository.tsx", path="UserRepository.tsx", name="UserRepository.tsx"))
+    r7 = classifier.classify(FileNode(id="UserRepository.tsx", path="UserRepository.tsx", name="UserRepository.tsx"))
     assert r7.role == "Repository"
     
-    r8 = RoleClassifier.classify(FileNode(id="UserModel.tsx", path="UserModel.tsx", name="UserModel.tsx"))
+    r8 = classifier.classify(FileNode(id="UserModel.tsx", path="UserModel.tsx", name="UserModel.tsx"))
     assert r8.role == "Model"
 
 def test_suspected_layer_violation():
@@ -172,3 +175,181 @@ def test_graph_unchanged():
     
     assert list(nx_graph.nodes) == original_nodes
     assert list(nx_graph.edges) == original_edges
+
+def test_custom_role_patterns_and_precedence():
+    from core.config import DocSwarmConfig, RoleConfig
+    config = DocSwarmConfig(
+        roles=[
+            # A completely custom role that will preempt due to ordering
+            RoleConfig(role_name="GodObject", patterns=["*god*"]),
+            # Redefine Model to only match exactly models.py
+            RoleConfig(role_name="Model", patterns=["models.py"])
+        ]
+    )
+    
+    analyzer = ArchitectureAnalyzer(GraphModel(), nx.DiGraph(), config)
+    classifier = analyzer.role_classifier
+    
+    # Custom pattern matches
+    r1 = classifier.classify(FileNode(id="god.py", path="god.py", name="god.py"))
+    assert r1.role == "GodObject"
+    
+    # Overlapping precedence: god object is defined first
+    r2 = classifier.classify(FileNode(id="god_models.py", path="god_models.py", name="god_models.py"))
+    assert r2.role == "GodObject"
+    
+    # Specific model matches
+    r3 = classifier.classify(FileNode(id="models.py", path="models.py", name="models.py"))
+    assert r3.role == "Model"
+    
+    # Fallback to unknown since default patterns are wiped
+    r4 = classifier.classify(FileNode(id="controller.py", path="controller.py", name="controller.py"))
+    assert r4.role == "Unknown"
+
+def test_custom_rules_and_penalties():
+    from core.config import DocSwarmConfig, RuleConfig, RoleConfig
+    
+    config = DocSwarmConfig(
+        roles=[
+            RoleConfig(role_name="GodObject", patterns=["god*"]),
+            RoleConfig(role_name="Service", patterns=["service*"])
+        ],
+        rules=[
+            RuleConfig(
+                id="CUSTOM-001",
+                source_role="GodObject",
+                forbidden_target_role="Service",
+                severity="critical",
+                penalty=50,
+                message="No."
+            )
+        ]
+    )
+    
+    nx_graph = nx.DiGraph()
+    nx_graph.add_edges_from([("god.py", "service.py")])
+    
+    domain_model = GraphModel()
+    domain_model.add_node(FileNode(id="god.py", path="god.py", name="god.py"))
+    domain_model.add_node(FileNode(id="service.py", path="service.py", name="service.py"))
+    
+    analyzer = ArchitectureAnalyzer(domain_model, nx_graph, config)
+    result = analyzer.analyze()
+    
+    assert len(result.violations) == 1
+    assert result.violations[0].rule_id == "CUSTOM-001"
+    assert result.violations[0].penalty == 50
+    assert result.health_score == 50
+
+def test_structural_cycle_independent_of_declarative_rules():
+    from core.config import DocSwarmConfig
+    
+    # Wipe all declarative rules
+    config = DocSwarmConfig(rules=[])
+    
+    nx_graph = nx.DiGraph()
+    nx_graph.add_edges_from([("A", "B"), ("B", "A")])
+    
+    domain_model = GraphModel()
+    domain_model.add_node(FileNode(id="A", path="A", name="A"))
+    domain_model.add_node(FileNode(id="B", path="B", name="B"))
+    
+    analyzer = ArchitectureAnalyzer(domain_model, nx_graph, config)
+    result = analyzer.analyze()
+    
+    # Structural rule still fires
+    assert len(result.violations) == 1
+    assert result.violations[0].rule_id == "ARCH-001"
+    assert result.violations[0].penalty == 15
+    assert result.health_score == 85
+
+def test_invalid_rule_configuration_validation():
+    from core.config import RuleConfig
+    from pydantic import ValidationError
+    
+    # Negative penalty
+    with pytest.raises(ValidationError):
+        RuleConfig(id="A", source_role="A", forbidden_target_role="B", severity="low", penalty=-1, message="")
+        
+    # Invalid severity
+    with pytest.raises(ValidationError):
+        RuleConfig(id="A", source_role="A", forbidden_target_role="B", severity="invalid", penalty=5, message="")
+
+    # Empty identifier
+    with pytest.raises(ValidationError):
+        RuleConfig(id="", source_role="A", forbidden_target_role="B", severity="low", penalty=5, message="")
+
+def test_determinism_repeated_analysis():
+    nx_graph = nx.DiGraph()
+    nx_graph.add_edges_from([("A", "B"), ("B", "A")])
+    
+    domain_model = GraphModel()
+    domain_model.add_node(FileNode(id="A", path="A", name="A"))
+    domain_model.add_node(FileNode(id="B", path="B", name="B"))
+    
+    analyzer = ArchitectureAnalyzer(domain_model, nx_graph)
+    result1 = analyzer.analyze()
+    result2 = analyzer.analyze()
+    
+    assert result1.health_score == result2.health_score
+    assert len(result1.violations) == len(result2.violations)
+    assert result1.metrics.num_cycles == result2.metrics.num_cycles
+
+def test_fnmatch_semantic_boundaries():
+    """Verify explicit fnmatch boundaries and case-insensitive behavior for RoleClassifier."""
+    from core.config import DocSwarmConfig
+    classifier = RoleClassifier(DocSwarmConfig().roles)
+    
+    # 1. Substring-equivalent patterns
+    assert classifier.classify(FileNode(id="UserController.py", path="UserController.py", name="UserController.py")).role == "Controller"
+    assert classifier.classify(FileNode(id="MyControllerFactory.py", path="MyControllerFactory.py", name="MyControllerFactory.py")).role == "Controller"
+    assert classifier.classify(FileNode(id="src/api/controller.py", path="src/api/controller.py", name="controller.py")).role == "Controller"
+    
+    # 2. Path patterns
+    # Verify that `*models/*` matches across nested structures due to fnmatch cross-directory semantics
+    assert classifier.classify(FileNode(id="models/User.py", path="models/User.py", name="User.py")).role == "Model"
+    assert classifier.classify(FileNode(id="models/nested/User.py", path="models/nested/User.py", name="User.py")).role == "Model"
+    assert classifier.classify(FileNode(id="src/models/User.py", path="src/models/User.py", name="User.py")).role == "Model"
+    
+    # 3 & 4. Case sensitivity and Filename vs Path matching
+    assert classifier.classify(FileNode(id="UserService.py", path="UserService.py", name="UserService.py")).role == "Service"
+    assert classifier.classify(FileNode(id="userservice.py", path="userservice.py", name="userservice.py")).role == "Service"
+    assert classifier.classify(FileNode(id="src/SERVICE/User.py", path="src/SERVICE/User.py", name="User.py")).role == "Service"
+    
+    # 6. Unknown fall-through
+    assert classifier.classify(FileNode(id="unknown.py", path="unknown.py", name="unknown.py")).role == "Unknown"
+
+def test_multiple_violations_accumulation_and_floor():
+    """Verify health score accumulation determinism and floor logic."""
+    from core.config import DocSwarmConfig, RuleConfig, RoleConfig
+    config = DocSwarmConfig(
+        roles=[
+            RoleConfig(role_name="A", patterns=["a.py"]),
+            RoleConfig(role_name="B", patterns=["b.py"]),
+            RoleConfig(role_name="C", patterns=["c.py"])
+        ],
+        rules=[
+            RuleConfig(id="R1", source_role="A", forbidden_target_role="B", severity="low", penalty=20, message=""),
+            RuleConfig(id="R2", source_role="B", forbidden_target_role="C", severity="medium", penalty=90, message="")
+        ]
+    )
+    
+    nx_graph = nx.DiGraph()
+    # Edges are inherently ordered by insertion in modern networkx
+    nx_graph.add_edges_from([("a.py", "b.py"), ("b.py", "c.py")])
+    
+    domain_model = GraphModel()
+    domain_model.add_node(FileNode(id="a.py", path="a.py", name="a.py"))
+    domain_model.add_node(FileNode(id="b.py", path="b.py", name="b.py"))
+    domain_model.add_node(FileNode(id="c.py", path="c.py", name="c.py"))
+    
+    analyzer = ArchitectureAnalyzer(domain_model, nx_graph, config)
+    result = analyzer.analyze()
+    
+    # Two violations should be accumulated deterministically
+    assert len(result.violations) == 2
+    assert result.violations[0].rule_id == "R1"
+    assert result.violations[1].rule_id == "R2"
+    
+    # Total penalty = 110, Health score = max(0, 100 - 110) = 0
+    assert result.health_score == 0
