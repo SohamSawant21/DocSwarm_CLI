@@ -1,4 +1,5 @@
 from core.models import FileNode, GraphModel, AnalysisResult, ParsingReport
+from core.config import DocSwarmConfig
 from scanner.scanner import WorkspaceScanner
 from parsers.registry import ParserRegistry
 from parsers.python import PythonParser
@@ -17,7 +18,8 @@ class AnalysisService:
     Orchestrates the codebase analysis lifecycle:
     Scanner -> Parser -> Resolver -> Graph Builder -> Analyzer
     """
-    def __init__(self):
+    def __init__(self, config: DocSwarmConfig | None = None):
+        self.config = config or DocSwarmConfig()
         self.scanner = WorkspaceScanner()
         self.registry = ParserRegistry()
         

@@ -50,9 +50,16 @@ def analyze(path: str = typer.Argument(".")):
     """
     target = get_workspace_dir(path)
     
+    from core.config import load_config, ConfigValidationError
+    try:
+        config = load_config(target)
+    except ConfigValidationError as e:
+        console.print(f"[red]Configuration Error: {e}[/red]")
+        raise typer.Exit(code=1)
+        
     with console.status(f"[bold green]Analyzing workspace at {target}..."):
         try:
-            service = AnalysisService()
+            service = AnalysisService(config=config)
             result = service.analyze(str(target))
             
             domain_model = result.graph

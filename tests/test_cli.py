@@ -74,3 +74,24 @@ def test_deps_missing_json(tmp_path):
     result = runner.invoke(app, ["deps", "a.py", str(tmp_path)])
     assert result.exit_code == 1
     assert "Analysis artifacts not found" in result.stdout
+
+def test_analyze_workspace_without_config(tmp_path):
+    (tmp_path / "a.py").write_text("import b", encoding="utf-8")
+    result = runner.invoke(app, ["analyze", str(tmp_path)])
+    assert result.exit_code == 0
+
+def test_analyze_workspace_with_valid_config(tmp_path):
+    (tmp_path / "a.py").write_text("import b", encoding="utf-8")
+    (tmp_path / ".docswarm.yaml").write_text("scanner:\n  max_file_size_kb: 4096\n", encoding="utf-8")
+    result = runner.invoke(app, ["analyze", str(tmp_path)])
+    assert result.exit_code == 0
+
+def test_analyze_workspace_with_invalid_config(tmp_path):
+    (tmp_path / "a.py").write_text("import b", encoding="utf-8")
+    (tmp_path / ".docswarm.yaml").write_text("scanner:\n  max_file_size_kb: 'huge'\n", encoding="utf-8")
+    result = runner.invoke(app, ["analyze", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "Configuration Error" in result.stdout
+    assert "Input should be a valid integer" in result.stdout
+    # Ensure no python traceback is emitted
+    assert "Traceback" not in result.stdout
